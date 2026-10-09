@@ -1,6 +1,6 @@
 {
   "name": "repo-radar",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A live GitHub dashboard for every repo across every account you're signed into.",
   "author": { "name": "AfterRealm" },
   "homepage": "https://github.com/J-M-Pineapple-Express/repo-radar",
