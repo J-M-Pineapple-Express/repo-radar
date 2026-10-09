@@ -1,0 +1,13 @@
+# Local notes (not part of the app)
+CLAUDE.md
+PLAN.md
+sessions/
+
+# Build output and installs
+node_modules/
+widget/dist/
+*.tmp
+
+# Written by Claude Code when it loads the mod
+mod/.claude-plugin/types/
+mod/tsconfig.json

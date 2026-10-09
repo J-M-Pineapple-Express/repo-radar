@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;" />
+  <title>Repo Radar</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="card">
+    <div class="drag">
+      <span class="title">📡 Repo Radar <span id="swept" class="swept"></span></span>
+      <div class="actions">
+        <button id="settings" title="Show or hide stats">⚙</button>
+        <button id="refresh" title="Sweep now">↻</button>
+        <button id="hide" title="Minimize">–</button>
+        <button id="close" title="Quit">×</button>
+      </div>
+    </div>
+
+    <div id="prefs" class="prefs hidden"></div>
+    <div id="error" class="error hidden"></div>
+
+    <div id="needs" class="needs hidden"></div>
+
+    <div id="tiles" class="tiles"></div>
+
+    <div id="trend" class="trend">
+      <div class="trend-head"><span>📥 Clones, last 30 days</span><span id="trend-sum" class="dim"></span></div>
+      <svg id="trend-svg" viewBox="0 0 300 54" preserveAspectRatio="none"></svg>
+    </div>
+
+    <div id="tabs" class="tabs"></div>
+    <div id="list" class="list"><div class="dim pad">Sweeping your repos…</div></div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

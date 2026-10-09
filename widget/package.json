@@ -1,0 +1,71 @@
+{
+  "name": "repo-radar-widget",
+  "version": "0.1.0",
+  "description": "Always-on-top GitHub dashboard for Claude Code users: stars, clones, downloads, releases, CI, and a to-do list you can hand to Claude.",
+  "author": "AfterRealm",
+  "license": "MIT",
+  "homepage": "https://github.com/J-M-Pineapple-Express/repo-radar",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/J-M-Pineapple-Express/repo-radar.git"
+  },
+  "bugs": {
+    "url": "https://github.com/J-M-Pineapple-Express/repo-radar/issues"
+  },
+  "main": "electron-main.js",
+  "scripts": {
+    "start": "electron .",
+    "icon": "electron build/make-icon.js",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win --x64",
+    "dist:mac": "electron-builder --mac --x64 --arm64"
+  },
+  "devDependencies": {
+    "electron": "^42.2.0",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "com.afterrealm.reporadar",
+    "productName": "Repo Radar",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron-main.js",
+      "preload.js",
+      "scanner.js",
+      "fixer.js",
+      "installer.js",
+      "lib.js",
+      "public/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png",
+      "artifactName": "RepoRadar-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Repo Radar"
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] },
+        { "target": "zip", "arch": ["x64", "arm64"] }
+      ],
+      "icon": "build/icon.png",
+      "category": "public.app-category.developer-tools",
+      "artifactName": "RepoRadar-${version}-${arch}.${ext}",
+      "identity": null
+    },
+    "dmg": {
+      "title": "Repo Radar ${version}"
+    }
+  }
+}

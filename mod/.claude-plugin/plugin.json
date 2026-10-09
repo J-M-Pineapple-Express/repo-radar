@@ -1,0 +1,16 @@
+{
+  "name": "repo-radar",
+  "version": "0.1.0",
+  "description": "A live GitHub dashboard for every repo across every account you're signed into.",
+  "author": { "name": "AfterRealm" },
+  "homepage": "https://github.com/J-M-Pineapple-Express/repo-radar",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "github_token": {
+      "type": "string",
+      "title": "GitHub token (optional)",
+      "description": "Used only when the gh CLI isn't signed in. A classic token with the repo and read:org scopes.",
+      "sensitive": true
+    }
+  }
+}
