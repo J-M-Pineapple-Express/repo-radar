@@ -376,6 +376,13 @@ const getJson = async (who, url) => {
   return res.ok ? res.json() : null
 }
 
+/** plugin.json, the marketplace copy and the release don't all name the same version (the widget's 🧩 item). */
+function versionsDisagree(r, x) {
+  if (r.kind !== 'plugin') return false
+  const seen = [r.pluginVersion, x.marketVersion ?? r.marketVersion, r.release].filter(Boolean).map(v => String(v).replace(/^v/i, ''))
+  return new Set(seen).size > 1
+}
+
 /**
  * The extras that go stale the moment a release goes out: commits since it, and the marketplace's copy
  * of the plugin. Notes which release they were read against, so a new one re-reads them before the hour is up.
@@ -517,10 +524,11 @@ async function scan({ force = false } = {}) {
         // Between hourly passes, keep the full download counts from the last one.
         const was = new Map((data.accounts ?? []).flatMap(a => a.repos).map(r => [repoKey(r.owner, r.name), r.downloads ?? 0]))
         for (const r of acct.repos) r.downloads = Math.max(r.downloads, was.get(repoKey(r.owner, r.name)) ?? 0)
-        // A release since the last pass: re-read what it changed, so the widget doesn't flag a mismatch for up to an hour.
+        // Re-read the release extras now, not at the next hourly pass, when they may be stale:
+        // a release since the last pass, or plugin versions that disagree (the fix may have landed since).
         const fresh = acct.repos.filter(r => {
           const x = data.extras?.[repoKey(r.owner, r.name)]
-          return x && x.release !== r.release
+          return x && (x.release !== r.release || versionsDisagree(r, x))
         })
         await inBatches(fresh, r => addReleaseExtras(w, r, data.extras[repoKey(r.owner, r.name)]))
       }
