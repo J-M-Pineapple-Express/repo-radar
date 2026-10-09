@@ -2,6 +2,13 @@
 
 All notable changes to Repo Radar. Versions follow [semver](https://semver.org).
 
+## [0.1.2] - 2026-10-09
+
+### Fixed
+- The widget no longer flags a version mismatch with the marketplace copy for up to an hour after a release.
+  A sweep that sees a new release now re-reads the marketplace copy and the commits-since-release count right away,
+  instead of waiting for the hourly pass.
+
 ## [0.1.1] - 2026-10-09
 
 ### Fixed
@@ -16,5 +23,6 @@ First release.
 - **Widget:** an always-on-top desktop dashboard for Windows and Mac: a "Needs you" strip, star/clone/download/CI tiles, a 30-day clones chart, and Plugins / Apps / Other tabs.
 - **Mod:** a Claude Code plugin with a `/repos` pane, toasts for new stars, forks, issues and releases, lifetime clone history, and `/repos widget` to open the widget.
 
+[0.1.2]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/J-M-Pineapple-Express/repo-radar/releases/tag/v0.1.0
