@@ -5,7 +5,8 @@ const NEEDS_PREVIEW = 4
 
 let data = null
 let error = ''
-let update = null // { version, ready } once a newer release is found
+let update = null // { version, ready, items, more } once a newer release is found
+let updated = null // { version, items, more } after an update installs, until dismissed
 let needsOpen = false
 const openRepos = new Set()
 
@@ -443,13 +444,27 @@ function renderSwept() {
   $('swept').textContent = data?.fetchedAt ? `· swept ${ago(data.fetchedAt)}` : ''
 }
 
+const RELEASES = 'https://github.com/J-M-Pineapple-Express/repo-radar/releases'
+
+/** A release-notes summary: a few bullets, then a link for the rest. */
+const whatsNew = n =>
+  (n.items ?? []).map(i => `<div class="news-item">• ${esc(i)}</div>`).join('') +
+  (n.more ? `<div class="news-item"><a data-open="${RELEASES}">+${n.more} more in the release notes</a></div>` : '')
+
 function renderUpdate() {
   $('update').classList.toggle('hidden', !update)
-  if (!update) return
-  const v = esc(update.version)
-  $('update').innerHTML = update.ready
-    ? `<div class="news-head"><span>⬆ Repo Radar ${v} is ready</span><button id="update-go" class="update-go">Restart</button></div>`
-    : `<div class="news-head"><span>⬆ Repo Radar ${v} is out</span><button id="update-go" class="update-go">Download</button></div>`
+  if (update) {
+    const v = esc(update.version)
+    const head = update.ready
+      ? `<span>⬆ Repo Radar ${v} is ready</span><button id="update-go" class="update-go">Restart</button>`
+      : `<span>⬆ Repo Radar ${v} is out</span><button id="update-go" class="update-go">Download</button>`
+    $('update').innerHTML = `<div class="news-head">${head}</div>${whatsNew(update)}`
+  }
+  // A newer update outranks the note about the last one.
+  const showUpdated = updated && !update
+  $('updated').classList.toggle('hidden', !showUpdated)
+  if (showUpdated)
+    $('updated').innerHTML = `<div class="news-head"><span>✨ Updated to ${esc(updated.version)}</span><button id="updated-x" title="Dismiss">×</button></div>${whatsNew(updated)}`
 }
 
 function render() {
@@ -479,6 +494,11 @@ function fit() {
 document.addEventListener('click', ev => {
   const t = ev.target
   if (t.closest('#update-go')) return window.radar.applyUpdate()
+  if (t.closest('#updated-x')) {
+    updated = null
+    window.radar.dismissUpdated()
+    return render()
+  }
   if (t.closest('#digest-x')) {
     if (data) data.digest = null
     window.radar.dismissDigest()
@@ -616,6 +636,10 @@ window.radar.onUpdate(u => {
   render()
 })
 window.radar.version().then(v => ($('version').textContent = `v${v}`))
+window.radar.getUpdated().then(u => {
+  updated = u
+  render()
+})
 window.radar.getUpdate().then(u => {
   update = u
   render()

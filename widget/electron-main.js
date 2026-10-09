@@ -79,12 +79,34 @@ const UPDATE_MS = 6 * 60 * 60 * 1000
 const RELEASES = 'https://github.com/J-M-Pineapple-Express/repo-radar/releases/latest'
 let update = null
 
+const plain = html =>
+  html.replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim()
+const firstSentence = s => {
+  const one = s.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? s
+  return one.length > 80 ? `${one.slice(0, 80).replace(/[\s,;:]+\S*$/, '')}…` : one
+}
+
+/**
+ * Release notes as a few short lines: the first sentence of each bullet, newest release first.
+ * With fullChangelog the updater hands over every release since this one, so a skipped version still counts.
+ */
+function notesSummary(notes, max = 4) {
+  const items = []
+  for (const html of (Array.isArray(notes) ? notes.map(n => n.note) : [notes]).map(h => String(h ?? ''))) {
+    const bullets = [...html.matchAll(/<li>([\s\S]*?)<\/li>/g)].map(m => plain(m[1]))
+    const para = plain(html.match(/<p>([\s\S]*?)<\/p>/)?.[1] ?? '')
+    items.push(...(bullets.length ? bullets : para ? [para] : []).map(firstSentence))
+  }
+  return { items: items.slice(0, max), more: Math.max(0, items.length - max) }
+}
+
 function watchUpdates() {
   if (!app.isPackaged && !process.env.RADAR_UPDATE_TEST) return
   const { autoUpdater } = require('electron-updater')
   const canInstall = process.platform === 'win32'
   autoUpdater.autoDownload = canInstall
   autoUpdater.autoInstallOnAppQuit = canInstall
+  autoUpdater.fullChangelog = true
   if (process.env.RADAR_UPDATE_TEST) {
     // Dev: RADAR_UPDATE_TEST=0.1.0 pretends to be that version, to try the check against the real releases.
     autoUpdater.forceDevUpdateConfig = true
@@ -93,9 +115,14 @@ function watchUpdates() {
     autoUpdater.setFeedURL({ provider: 'github', owner: 'J-M-Pineapple-Express', repo: 'repo-radar' })
     autoUpdater.currentVersion = new autoUpdater.currentVersion.constructor(process.env.RADAR_UPDATE_TEST)
   }
-  const tell = next => send('radar:update', (update = next))
-  autoUpdater.on('update-available', info => !canInstall && tell({ version: info.version, ready: false }))
-  autoUpdater.on('update-downloaded', info => tell({ version: info.version, ready: true }))
+  // The summary is kept in settings too, for the "Updated to" card once the new version starts.
+  const tell = (info, ready) => {
+    const notes = { version: info.version, ...notesSummary(info.releaseNotes) }
+    saveSettings({ updatedNotes: notes })
+    send('radar:update', (update = { ...notes, ready }))
+  }
+  autoUpdater.on('update-available', info => !canInstall && tell(info, false))
+  autoUpdater.on('update-downloaded', info => tell(info, true))
   autoUpdater.on('error', () => {}) // offline or rate-limited: try again next time
   const check = () => autoUpdater.checkForUpdates().catch(() => {})
   check()
@@ -139,6 +166,12 @@ function watchData() {
 ipcMain.handle('radar:get', () => scanner.load())
 ipcMain.handle('radar:version', () => app.getVersion())
 ipcMain.handle('radar:getUpdate', () => update)
+// What the update that just installed brought, until the card is dismissed.
+ipcMain.handle('radar:getUpdated', () => {
+  const notes = loadSettings().updatedNotes
+  return notes?.version === app.getVersion() ? notes : null
+})
+ipcMain.on('radar:dismissUpdated', () => saveSettings({ updatedNotes: null }))
 ipcMain.on('radar:applyUpdate', () => {
   if (update?.ready) require('electron-updater').autoUpdater.quitAndInstall(true, true)
   else shell.openExternal(RELEASES)
