@@ -73,6 +73,35 @@ function createWidget() {
 
 const send = (channel, payload) => win && !win.isDestroyed() && win.webContents.send(channel, payload)
 
+// Updates come from this repo's GitHub releases. Windows downloads in the background and installs on restart.
+// The Mac builds aren't signed, and macOS won't apply an unsigned update, so there the bar links the release.
+const UPDATE_MS = 6 * 60 * 60 * 1000
+const RELEASES = 'https://github.com/J-M-Pineapple-Express/repo-radar/releases/latest'
+let update = null
+
+function watchUpdates() {
+  if (!app.isPackaged && !process.env.RADAR_UPDATE_TEST) return
+  const { autoUpdater } = require('electron-updater')
+  const canInstall = process.platform === 'win32'
+  autoUpdater.autoDownload = canInstall
+  autoUpdater.autoInstallOnAppQuit = canInstall
+  if (process.env.RADAR_UPDATE_TEST) {
+    // Dev: RADAR_UPDATE_TEST=0.1.0 pretends to be that version, to try the check against the real releases.
+    autoUpdater.forceDevUpdateConfig = true
+    autoUpdater.autoInstallOnAppQuit = false
+    autoUpdater.logger = console
+    autoUpdater.setFeedURL({ provider: 'github', owner: 'J-M-Pineapple-Express', repo: 'repo-radar' })
+    autoUpdater.currentVersion = new autoUpdater.currentVersion.constructor(process.env.RADAR_UPDATE_TEST)
+  }
+  const tell = next => send('radar:update', (update = next))
+  autoUpdater.on('update-available', info => !canInstall && tell({ version: info.version, ready: false }))
+  autoUpdater.on('update-downloaded', info => tell({ version: info.version, ready: true }))
+  autoUpdater.on('error', () => {}) // offline or rate-limited: try again next time
+  const check = () => autoUpdater.checkForUpdates().catch(() => {})
+  check()
+  setInterval(check, UPDATE_MS)
+}
+
 function notify(news) {
   if (!Notification.isSupported()) return
   for (const line of news.slice(0, NOTIFY_LIMIT)) new Notification({ title: '📡 Repo Radar', body: line }).show()
@@ -108,6 +137,11 @@ function watchData() {
 }
 
 ipcMain.handle('radar:get', () => scanner.load())
+ipcMain.handle('radar:getUpdate', () => update)
+ipcMain.on('radar:applyUpdate', () => {
+  if (update?.ready) require('electron-updater').autoUpdater.quitAndInstall(true, true)
+  else shell.openExternal(RELEASES)
+})
 ipcMain.on('radar:refresh', () => sweep(true))
 ipcMain.on('radar:open', (_e, url) => /^https:\/\//.test(url) && shell.openExternal(url))
 ipcMain.on('radar:dismissDigest', () => {
@@ -196,6 +230,7 @@ if (!app.requestSingleInstanceLock()) {
     watchData()
     sweep()
     setInterval(() => sweep(), REFRESH_MS)
+    watchUpdates()
   })
   app.on('window-all-closed', () => app.quit())
 }

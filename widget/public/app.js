@@ -5,6 +5,7 @@ const NEEDS_PREVIEW = 4
 
 let data = null
 let error = ''
+let update = null // { version, ready } once a newer release is found
 let needsOpen = false
 const openRepos = new Set()
 
@@ -442,7 +443,17 @@ function renderSwept() {
   $('swept').textContent = data?.fetchedAt ? `· swept ${ago(data.fetchedAt)}` : ''
 }
 
+function renderUpdate() {
+  $('update').classList.toggle('hidden', !update)
+  if (!update) return
+  const v = esc(update.version)
+  $('update').innerHTML = update.ready
+    ? `<div class="news-head"><span>⬆ Repo Radar ${v} is ready</span><button id="update-go" class="update-go">Restart</button></div>`
+    : `<div class="news-head"><span>⬆ Repo Radar ${v} is out</span><button id="update-go" class="update-go">Download</button></div>`
+}
+
 function render() {
+  renderUpdate()
   $('error').classList.toggle('hidden', !error)
   $('error').textContent =
     error === 'no-auth' ? '⚠ No GitHub account found. Run "gh auth login" in a terminal, then sweep again.' : error ? `⚠ ${error}` : ''
@@ -467,6 +478,7 @@ function fit() {
 
 document.addEventListener('click', ev => {
   const t = ev.target
+  if (t.closest('#update-go')) return window.radar.applyUpdate()
   if (t.closest('#digest-x')) {
     if (data) data.digest = null
     window.radar.dismissDigest()
@@ -598,6 +610,14 @@ window.radar.onData(d => {
 window.radar.onScanning(on => {
   $('refresh').innerHTML = on ? '<span class="spin">↻</span>' : '↻'
   if (on) error = ''
+})
+window.radar.onUpdate(u => {
+  update = u
+  render()
+})
+window.radar.getUpdate().then(u => {
+  update = u
+  render()
 })
 window.radar.onError(msg => {
   error = msg

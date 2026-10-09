@@ -62,6 +62,8 @@ button { font-family: inherit; color: inherit; }
 .news-head { display: flex; justify-content: space-between; gap: 6px; font-weight: 600; }
 .news-head button { background: none; border: none; cursor: pointer; opacity: 0.6; padding: 0 2px; }
 .news-head button:hover { opacity: 1; }
+.news-head .update-go { opacity: 1; font-weight: 600; color: var(--link); }
+.news-head .update-go:hover { text-decoration: underline; }
 .news-item { opacity: 0.85; line-height: 1.5; }
 .needs-title { font-weight: 600; opacity: 0.85; margin-bottom: 3px; }
 .need { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 5px; cursor: pointer; }
