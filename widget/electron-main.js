@@ -137,6 +137,7 @@ function watchData() {
 }
 
 ipcMain.handle('radar:get', () => scanner.load())
+ipcMain.handle('radar:version', () => app.getVersion())
 ipcMain.handle('radar:getUpdate', () => update)
 ipcMain.on('radar:applyUpdate', () => {
   if (update?.ready) require('electron-updater').autoUpdater.quitAndInstall(true, true)

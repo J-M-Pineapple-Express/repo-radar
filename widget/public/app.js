@@ -615,6 +615,7 @@ window.radar.onUpdate(u => {
   update = u
   render()
 })
+window.radar.version().then(v => ($('version').textContent = `v${v}`))
 window.radar.getUpdate().then(u => {
   update = u
   render()
