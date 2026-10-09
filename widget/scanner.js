@@ -372,6 +372,29 @@ const getJson = async (who, url) => {
 }
 
 /**
+ * The extras that go stale the moment a release goes out: commits since it, and the marketplace's copy
+ * of the plugin. Notes which release they were read against, so a new one re-reads them before the hour is up.
+ */
+async function addReleaseExtras(who, r, x) {
+  try {
+    if (r.release && r.defaultBranch) {
+      const cmp = await getJson(who, `${restBase(who.host)}/repos/${r.owner}/${r.name}/compare/${encodeURIComponent(r.release)}...${encodeURIComponent(r.defaultBranch)}`)
+      x.unreleased = cmp ? cmp.ahead_by : x.unreleased ?? null
+    } else x.unreleased = null
+  } catch {}
+  try {
+    // The marketplace's own copy of this plugin, when it keeps one (source "./plugins/name").
+    if (r.marketCopy) {
+      const res = await fetch(`${restBase(who.host)}/repos/${r.marketCopy.repo}/contents/${r.marketCopy.path}/.claude-plugin/plugin.json`, {
+        headers: { ...headers(who.token), Accept: 'application/vnd.github.raw' },
+      })
+      x.marketVersion = res.ok ? versionOf(await res.text()) : null
+    }
+  } catch {}
+  x.release = r.release
+}
+
+/**
  * The hourly extras for repos you can push to, kept in data.extras by owner/name:
  * commits since the latest release, open Dependabot alerts, and where visitors came from.
  * Each is a bonus: a repo without access (or with Dependabot off) just goes without.
@@ -385,21 +408,7 @@ async function addExtras(who, acct, data) {
   await inBatches(picks, async r => {
     const key = repoKey(r.owner, r.name)
     const x = (data.extras[key] ??= {})
-    try {
-      if (r.release && r.defaultBranch) {
-        const cmp = await getJson(who, `${base(r)}/compare/${encodeURIComponent(r.release)}...${encodeURIComponent(r.defaultBranch)}`)
-        x.unreleased = cmp ? cmp.ahead_by : x.unreleased ?? null
-      } else x.unreleased = null
-    } catch {}
-    try {
-      // The marketplace's own copy of this plugin, when it keeps one (source "./plugins/name").
-      if (r.marketCopy) {
-        const res = await fetch(`${restBase(who.host)}/repos/${r.marketCopy.repo}/contents/${r.marketCopy.path}/.claude-plugin/plugin.json`, {
-          headers: { ...headers(who.token), Accept: 'application/vnd.github.raw' },
-        })
-        x.marketVersion = res.ok ? versionOf(await res.text()) : null
-      }
-    } catch {}
+    await addReleaseExtras(who, r, x)
     try {
       const alerts = await getJson(who, `${base(r)}/dependabot/alerts?state=open&per_page=20`)
       if (Array.isArray(alerts)) {
@@ -503,6 +512,12 @@ async function scan({ force = false } = {}) {
         // Between hourly passes, keep the full download counts from the last one.
         const was = new Map((data.accounts ?? []).flatMap(a => a.repos).map(r => [repoKey(r.owner, r.name), r.downloads ?? 0]))
         for (const r of acct.repos) r.downloads = Math.max(r.downloads, was.get(repoKey(r.owner, r.name)) ?? 0)
+        // A release since the last pass: re-read what it changed, so the widget doesn't flag a mismatch for up to an hour.
+        const fresh = acct.repos.filter(r => {
+          const x = data.extras?.[repoKey(r.owner, r.name)]
+          return x && x.release !== r.release
+        })
+        await inBatches(fresh, r => addReleaseExtras(w, r, data.extras[repoKey(r.owner, r.name)]))
       }
     } catch {
       // the repo list still stands without its extras
