@@ -2,6 +2,17 @@
 
 All notable changes to Repo Radar. Versions follow [semver](https://semver.org).
 
+## [0.1.5] - 2026-10-09
+
+### Fixed
+- `/repos widget` works on Mac. It opens the installed app with `open -a`, or the dev copy beside the mod.
+- When the widget isn't installed, `/repos widget` points to this repo's releases. It used to name the AfterRealm releases page.
+- 🔧 Fix, 👀 Review and 🚢 Ship it work on Mac for folders with spaces or quotes in their names. Every part of the Terminal command is quoted now.
+- Bots don't count as people waiting on you. A last comment from `dependabot[bot]`, `github-actions[bot]` or Renovate no longer marks an issue 💬.
+
+### Changed
+- The downloads tooltip says that apps which update themselves count each update as a download. GitHub can't tell them apart.
+
 ## [0.1.4] - 2026-10-09
 
 ### Added
@@ -38,6 +49,7 @@ First release.
 - **Widget:** an always-on-top desktop dashboard for Windows and Mac: a "Needs you" strip, star/clone/download/CI tiles, a 30-day clones chart, and Plugins / Apps / Other tabs.
 - **Mod:** a Claude Code plugin with a `/repos` pane, toasts for new stars, forks, issues and releases, lifetime clone history, and `/repos widget` to open the widget.
 
+[0.1.5]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.1...v0.1.2

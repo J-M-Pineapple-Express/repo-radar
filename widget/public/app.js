@@ -85,7 +85,7 @@ function renderTiles(repos) {
   const tiles = [
     ['tile-stars', compact(repos.reduce((n, r) => n + r.stars, 0)), '⭐ stars'],
     ['tile-clones', compact(clones), '📥 clones', 'Lifetime clones across every repo. A plugin install clones its repo.'],
-    ['tile-downloads', compact(downloads), '⬇ downloads', 'Release downloads (auto-updater checks not counted)'],
+    ['tile-downloads', compact(downloads), '⬇ downloads', DOWNLOADS_TIP],
     ['tile-ci', red.length || '✓', red.length ? '🔴 CI failing' : 'CI passing', red.map(r => r.name).join(', ')],
   ].filter(([id]) => !hide.has(id))
   $('tiles').innerHTML = tiles
@@ -119,7 +119,13 @@ function versionDrift(r) {
 }
 
 /** Has someone else had the last word on this issue? "You" is every account gh is signed into. */
-const isWaiting = i => i.lastBy && !(data.logins ?? []).includes(i.lastBy)
+// GitHub counts a file download the same whoever asks: a person, or an app updating itself.
+// The update checks (latest.yml, blockmaps) are left out; the installer an update fetches can't be.
+const DOWNLOADS_TIP = 'Release downloads. Apps that update themselves count each update too.'
+
+// Bots (dependabot[bot], github-actions[bot]) comment too, but nobody is waiting on them.
+const isBot = login => /\[bot\]$|^(dependabot|github-actions|renovate)$/i.test(login ?? '')
+const isWaiting = i => i.lastBy && !isBot(i.lastBy) && !(data.logins ?? []).includes(i.lastBy)
 
 /**
  * Things worth a look: failing CI, security alerts, releases missing assets, plugin versions out of step,
@@ -262,7 +268,7 @@ function headline(r) {
     const n = sum(entry(r)?.clones)
     if (n) parts.push(`<span title="Lifetime clones. A plugin install clones its repo.">📥 ${compact(n)}</span>`)
   } else if (r.kind === 'app' && r.downloads) {
-    parts.push(`<span title="Release downloads">⬇ ${compact(r.downloads)}</span>`)
+    parts.push(`<span title="${DOWNLOADS_TIP}">⬇ ${compact(r.downloads)}</span>`)
   }
   if (r.stars && !hide.has('stars')) parts.push(`<span title="Stars">⭐ ${compact(r.stars)}</span>`)
   return parts.join('')

@@ -110,24 +110,37 @@ async function saveShared($: Engine, patch: { history?: History; ledger?: Ledger
   }
 }
 
+const WIDGET_RELEASES = 'https://github.com/J-M-Pineapple-Express/repo-radar/releases/latest'
+const NO_WIDGET = `Couldn't find the Repo Radar widget. Install it from ${WIDGET_RELEASES}, then try /repos widget again.`
+
 /**
  * Starts the widget without waiting on it. The installed app first; while building,
- * the widget folder beside this mod. `start` detaches it, so a mod reload never closes it.
+ * the widget folder beside this mod. `start` (Windows) and `open` (Mac) detach it,
+ * so a mod reload never closes it.
  */
 async function launchWidget($: Engine): Promise<string> {
-  const local = (await $.env.get('LOCALAPPDATA')) ?? ''
   const root = $.plugin.root.replaceAll('\\', '/').replace(/\/$/, '').replace(/\/\.claude-plugin$/, '')
   const dev = `${root.slice(0, root.lastIndexOf('/'))}/widget`
-  const installed = `${local}/Programs/Repo Radar/Repo Radar.exe`
-  const devElectron = `${dev}/node_modules/electron/dist/electron.exe`
-  const argv = local && (await $.fs.exists(installed))
-    ? [installed]
-    : (await $.fs.exists(devElectron))
-      ? [devElectron, dev]
-      : null
-  if (!argv) return "Couldn't find the Repo Radar widget. Install it from the AfterRealm releases page, then try /repos widget again."
-  const r = await $.process.run(['cmd', '/c', 'start', 'Repo Radar', ...argv.map(winPath)])
-  return r.exitCode === 0 ? '📡 Repo Radar widget launched.' : `Couldn't launch the widget: ${r.stderr.trim() || `exit ${r.exitCode}`}`
+  const ok = '📡 Repo Radar widget launched.'
+  const failed = (r: { exitCode: number; stderr: string }) => `Couldn't launch the widget: ${r.stderr.trim() || `exit ${r.exitCode}`}`
+  const local = (await $.env.get('LOCALAPPDATA')) ?? ''
+  if (local) {
+    const installed = `${local}/Programs/Repo Radar/Repo Radar.exe`
+    const devElectron = `${dev}/node_modules/electron/dist/electron.exe`
+    const argv = (await $.fs.exists(installed)) ? [installed] : (await $.fs.exists(devElectron)) ? [devElectron, dev] : null
+    if (!argv) return NO_WIDGET
+    const r = await $.process.run(['cmd', '/c', 'start', 'Repo Radar', ...argv.map(winPath)])
+    return r.exitCode === 0 ? ok : failed(r)
+  }
+  // Mac: `open -a` finds the app wherever it was dragged (Applications, ~/Applications).
+  const app = await $.process.run(['open', '-a', 'Repo Radar']).catch(() => null)
+  if (app?.exitCode === 0) return ok
+  const devApp = `${dev}/node_modules/electron/dist/Electron.app`
+  if (await $.fs.exists(devApp)) {
+    const r = await $.process.run(['open', '-a', devApp, '--args', dev])
+    return r.exitCode === 0 ? ok : failed(r)
+  }
+  return NO_WIDGET
 }
 
 async function ghLogins($: Engine): Promise<{ host: string; login: string }[]> {

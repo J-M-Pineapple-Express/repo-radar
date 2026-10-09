@@ -106,10 +106,15 @@ function load() {
   }
 }
 
-/** Atomic write: a reader never sees half a file. */
+let saves = 0
+
+/**
+ * Atomic write: a reader never sees half a file. Each save gets its own temp name, since a click
+ * (a pref, a dismiss) can save while a sweep is saving too.
+ */
 function save(data) {
   fs.mkdirSync(DIR, { recursive: true })
-  const tmp = `${DATA}.${process.pid}.tmp`
+  const tmp = `${DATA}.${process.pid}.${++saves}.tmp`
   fs.writeFileSync(tmp, JSON.stringify(data))
   fs.renameSync(tmp, DATA)
 }

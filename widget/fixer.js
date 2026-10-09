@@ -95,6 +95,16 @@ function findLocal(key, remembered) {
   return null
 }
 
+/** A POSIX shell word: single-quoted, so spaces and symbols in folder names survive. */
+const shellQuote = s => `'${String(s).replace(/'/g, `'\\''`)}'`
+
+/**
+ * The AppleScript that opens Terminal on the task: `cd <dir> && claude <prompt>`, every part quoted.
+ * The shell line goes in as one AppleScript string; JSON's escaping (\" and \\) is AppleScript's too.
+ */
+const macScript = (dir, exe, prompt) =>
+  `tell application "Terminal" to do script ${JSON.stringify(`cd ${shellQuote(dir)} && ${shellQuote(exe)} ${shellQuote(prompt)}`)}`
+
 const claudeExe = () => {
   const local = path.join(HOME, '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude')
   return fs.existsSync(local) ? local : 'claude'
@@ -132,12 +142,11 @@ function launch(task, repo, remembered) {
       : ['cmd', ['/c', 'start', `Claude: ${repo.name}`, '/d', dir, exe, prompt]]
     spawn(argv[0], argv[1], { detached: true, stdio: 'ignore', windowsHide: false }).unref()
   } else if (process.platform === 'darwin') {
-    const script = `tell application "Terminal" to do script "cd ${dir.replace(/"/g, '\\"')} && ${exe} " & quoted form of ${JSON.stringify(prompt)}`
-    spawn('osascript', ['-e', script, '-e', 'tell application "Terminal" to activate'], { detached: true, stdio: 'ignore' }).unref()
+    spawn('osascript', ['-e', macScript(dir, exe, prompt), '-e', 'tell application "Terminal" to activate'], { detached: true, stdio: 'ignore' }).unref()
   } else {
     return { ok: false, why: 'Opening a terminal isn’t supported on this system yet.' }
   }
   return { ok: true, where: dir === WORK ? 'a fresh clone' : dir }
 }
 
-module.exports = { launch, promptFor }
+module.exports = { launch, promptFor, macScript, shellQuote }
