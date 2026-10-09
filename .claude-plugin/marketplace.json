@@ -1,0 +1,14 @@
+{
+  "name": "repo-radar",
+  "description": "Repo Radar: a GitHub dashboard for Claude Code users.",
+  "owner": { "name": "J-M-Pineapple-Express", "url": "https://github.com/J-M-Pineapple-Express" },
+  "plugins": [
+    {
+      "name": "repo-radar",
+      "source": "./mod",
+      "category": "productivity",
+      "description": "A live GitHub dashboard for every repo across every account you are signed into: a /repos pane, toasts for new stars, forks, issues and releases, lifetime clone history, and /repos widget for the desktop widget.",
+      "homepage": "https://github.com/J-M-Pineapple-Express/repo-radar"
+    }
+  ]
+}

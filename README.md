@@ -34,8 +34,8 @@ It sweeps every repo of every account the [GitHub CLI](https://cli.github.com) i
 **The mod:** in Claude Code:
 
 ```
-/plugin marketplace add AfterRealm/marketplace
-/plugin install repo-radar@afterrealm
+/plugin marketplace add J-M-Pineapple-Express/repo-radar
+/plugin install repo-radar@repo-radar
 ```
 
 Then type `/repos` for the pane, or `/repos widget` to open the widget.
