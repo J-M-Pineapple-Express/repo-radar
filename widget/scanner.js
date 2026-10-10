@@ -9,7 +9,8 @@ const checks = require('./checks')
 const DIR = path.join(os.homedir(), '.claude', 'repo-radar')
 const DATA = path.join(DIR, 'data.json')
 const MOD_STORE = path.join(os.homedir(), '.claude', 'plugins', 'store')
-const PAGE_LIMIT = 10 // pages of 50: each repo asks for releases, issues and PRs, so smaller pages keep GitHub from timing out
+const MAX_REPOS = 500
+const PAGE_SIZES = [50, 25, 10] // each repo asks for a lot; when GitHub calls a page too heavy, ask for fewer
 const STALE_DAYS = 90
 const TRAFFIC_MS = 60 * 60 * 1000 // GitHub updates traffic about hourly
 const TRAFFIC_LIMIT = 300 // per account, most recently pushed first: in practice every repo
@@ -17,10 +18,10 @@ const BATCH = 10 // repos fetched at once
 const RELEASE_PAGES = 3 // up to 300 releases per repo
 const AWAY_MS = 30 * 60 * 1000
 
-const QUERY = `query($after: String) {
+const QUERY = `query($after: String, $first: Int!) {
   viewer {
     login
-    repositories(first: 50, after: $after,
+    repositories(first: $first, after: $after,
       ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER],
       orderBy: { field: PUSHED_AT, direction: DESC }) {
       pageInfo { hasNextPage endCursor }
@@ -244,8 +245,13 @@ async function fetchAccount(who, now) {
   const repos = []
   let login = who.login
   let after = null
-  for (let page = 0; page < PAGE_LIMIT; page++) {
-    const body = await graphql(who, QUERY, { after })
+  let size = 0
+  while (repos.length < MAX_REPOS) {
+    const body = await graphql(who, QUERY, { after, first: PAGE_SIZES[size] })
+    if (body.error && /resource limits|timeout|hiccuped/i.test(body.error) && size < PAGE_SIZES.length - 1) {
+      size++
+      continue
+    }
     if (body.error) return { host: who.host, login: login || '?', repos, error: body.error }
     const conn = body.data.viewer.repositories
     login = body.data.viewer.login

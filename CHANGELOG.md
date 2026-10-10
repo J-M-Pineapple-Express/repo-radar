@@ -2,6 +2,11 @@
 
 All notable changes to Repo Radar. Versions follow [semver](https://semver.org).
 
+## [0.1.8] - 2026-10-10
+
+### Fixed
+- A sweep no longer fails with "Resource limits for this query exceeded". When GitHub calls a page of repos too heavy, the widget asks for 25, then 10 at a time. Before, the error left the widget showing its last good sweep, without the new 🔍 findability item.
+
 ## [0.1.7] - 2026-10-10
 
 ### Added
@@ -67,6 +72,7 @@ First release.
 - **Widget:** an always-on-top desktop dashboard for Windows and Mac: a "Needs you" strip, star/clone/download/CI tiles, a 30-day clones chart, and Plugins / Apps / Other tabs.
 - **Mod:** a Claude Code plugin with a `/repos` pane, toasts for new stars, forks, issues and releases, lifetime clone history, and `/repos widget` to open the widget.
 
+[0.1.8]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.4...v0.1.5
