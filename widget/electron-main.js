@@ -189,10 +189,22 @@ ipcMain.handle('radar:fix', (_e, task) => {
   const found = data.accounts.flatMap(a => a.repos).find(r => `${r.owner}/${r.name}` === task?.repo)
   if (!found) return { ok: false, why: 'That repo isn’t in the last sweep.' }
   const repo = { ...found, extras: data.extras?.[task.repo] ?? {} }
+  // The findability item covers every public plugin and app missing something, not one repo.
+  if (task.kind === 'hygiene') {
+    repo.findable = data.accounts
+      .flatMap(a => a.repos)
+      .filter(r => r.canPush && !r.isFork && !r.isPrivate && r.health !== 'archived' && r.kind !== 'other' && r.missing?.length)
+      .map(r => ({ key: `${r.owner}/${r.name}`, missing: r.missing }))
+  }
   const remembered = loadSettings().localRepos ?? {}
   try {
     const result = fixer.launch(task, repo, remembered)
     saveSettings({ localRepos: remembered })
+    // Claude will fetch or clone it from this machine today: not an outside cloner.
+    if (result.ok && task.kind !== 'hygiene') {
+      scanner.markSelf(data, task.repo)
+      scanner.save(data)
+    }
     return result
   } catch (err) {
     return { ok: false, why: String(err.message ?? err) }

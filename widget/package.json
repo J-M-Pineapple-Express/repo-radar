@@ -1,6 +1,6 @@
 {
   "name": "repo-radar-widget",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Always-on-top GitHub dashboard for Claude Code users: stars, clones, downloads, releases, CI, and a to-do list you can hand to Claude.",
   "author": "AfterRealm",
   "license": "MIT",
@@ -36,6 +36,7 @@
       "scanner.js",
       "fixer.js",
       "installer.js",
+      "checks.js",
       "lib.js",
       "public/**/*",
       "package.json"

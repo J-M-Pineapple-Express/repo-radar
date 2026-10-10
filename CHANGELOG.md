@@ -2,6 +2,17 @@
 
 All notable changes to Repo Radar. Versions follow [semver](https://semver.org).
 
+## [0.1.7] - 2026-10-10
+
+### Added
+- Health checks in ⚠️ Needs Attention, each with a 🔧 Fix:
+  - ✘ A plugin or marketplace fails `claude plugin validate`. It checks GitHub's copy (what people install), and each plugin a marketplace bundles, whenever the default branch moves.
+  - 📝 A README names an older version than the latest release, of the repo itself or of a repo it links to.
+  - 🔍 Public plugins and apps missing a description, topics, a license or a README, grouped into one item.
+
+### Changed
+- Clones count outside people only: unique cloners per day, minus CI builds and minus this machine on days Repo Radar touched the repo. Bots that clone new public repos can't be told apart. Days from before this version keep their raw counts.
+
 ## [0.1.6] - 2026-10-09
 
 ### Fixed
@@ -56,6 +67,7 @@ First release.
 - **Widget:** an always-on-top desktop dashboard for Windows and Mac: a "Needs you" strip, star/clone/download/CI tiles, a 30-day clones chart, and Plugins / Apps / Other tabs.
 - **Mod:** a Claude Code plugin with a `/repos` pane, toasts for new stars, forks, issues and releases, lifetime clone history, and `/repos widget` to open the widget.
 
+[0.1.7]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.3...v0.1.4

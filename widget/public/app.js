@@ -53,6 +53,11 @@ const sum = obj => Object.values(obj ?? {}).reduce((n, c) => n + c, 0)
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
 const entry = r => data.history?.[`${r.owner}/${r.name}`]
 
+// Clones from outside: unique cloners a day, minus CI checkouts and your own machine (the scanner works
+// these out). Days from before uniques were kept show plain clone counts.
+const cl = e => ({ ...(e?.clones ?? {}), ...(e?.outside ?? {}) })
+const CLONES_TIP = 'Unique cloners from outside: CI builds and your own machine are left out. Bots that clone new repos can’t be told apart.'
+
 /** Every repo, tagged with its account's login. */
 const allRepos = () => data.accounts.flatMap(a => a.repos.map(r => ({ ...r, login: a.login })))
 
@@ -60,7 +65,7 @@ const allRepos = () => data.accounts.flatMap(a => a.repos.map(r => ({ ...r, logi
 function week(r) {
   const e = entry(r)
   const keys = dayKeys(14)
-  const count = ks => ks.reduce((n, k) => n + (e?.clones?.[k] ?? 0), 0)
+  const count = ks => ks.reduce((n, k) => n + (cl(e)[k] ?? 0), 0)
   return { now: count(keys.slice(7)), before: count(keys.slice(0, 7)) }
 }
 
@@ -80,11 +85,11 @@ function chart(values, keys, w, h) {
 function renderTiles(repos) {
   const hide = hidden()
   const red = repos.filter(r => r.health === 'red')
-  const clones = Object.values(data.history ?? {}).reduce((n, e) => n + sum(e.clones), 0)
+  const clones = Object.values(data.history ?? {}).reduce((n, e) => n + sum(cl(e)), 0)
   const downloads = repos.reduce((n, r) => n + (r.downloads ?? 0), 0)
   const tiles = [
     ['tile-stars', compact(repos.reduce((n, r) => n + r.stars, 0)), '⭐ stars'],
-    ['tile-clones', compact(clones), '📥 clones', 'Lifetime clones across every repo. A plugin install clones its repo.'],
+    ['tile-clones', compact(clones), '📥 clones', CLONES_TIP],
     ['tile-downloads', compact(downloads), '⬇ downloads', DOWNLOADS_TIP],
     ['tile-ci', red.length || '✓', red.length ? '🔴 CI failing' : 'CI passing', red.map(r => r.name).join(', ')],
   ].filter(([id]) => !hide.has(id))
@@ -96,7 +101,7 @@ function renderTiles(repos) {
 
 function renderTrend() {
   const keys = dayKeys(30)
-  const values = keys.map(k => Object.values(data.history ?? {}).reduce((n, e) => n + (e.clones?.[k] ?? 0), 0))
+  const values = keys.map(k => Object.values(data.history ?? {}).reduce((n, e) => n + (cl(e)[k] ?? 0), 0))
   $('trend').classList.toggle('hidden', hidden().has('trend'))
   $('trend-sum').textContent = `${compact(values.reduce((a, b) => a + b, 0))} total`
   $('trend-svg').innerHTML = chart(values, keys, 300, 54)
@@ -128,7 +133,7 @@ const isBot = login => /\[bot\]$|^(dependabot|github-actions|renovate)$/i.test(l
 const isWaiting = i => i.lastBy && !isBot(i.lastBy) && !(data.logins ?? []).includes(i.lastBy)
 
 /**
- * Things worth a look: failing CI, security alerts, releases missing assets, plugin versions out of step,
+ * Things worth a look: failing CI, security alerts, plugins failing validation, releases missing assets, plugin versions out of step, READMEs behind,
  * then each open issue (the ones waiting on you first) and PR, then work waiting to ship. Each can go to Claude.
  */
 function needs(repos) {
@@ -146,6 +151,12 @@ function needs(repos) {
     }
     if (alerts.length > ISSUES_EACH) out.push({ id: `alerts:${key(r)}`, icon: '🔒', text: `<b>${esc(r.name)}</b> +${plural(alerts.length - ISSUES_EACH, 'more security alert')}`, url: `${r.url}/security/dependabot` })
   }
+  for (const r of mine) {
+    const errors = extras(r).validation?.errors ?? []
+    if (!errors.length) continue
+    const first = `${esc(errors[0].where)}: ${esc(errors[0].message)}`
+    out.push({ id: `validate:${key(r)}`, icon: '✘', text: `<b>${esc(r.name)}</b> fails plugin validation${errors.length > 1 ? ` (${errors.length} errors)` : ''}: ${first}`, url: r.url, tip: 'claude plugin validate, run on what’s on GitHub', task: { kind: 'validate', repo: key(r) }, sig: extras(r).validation.oid })
+  }
   for (const r of mine.filter(r => r.missingAssets?.length)) {
     out.push({ id: `assets:${key(r)}`, icon: '📦', text: `<b>${esc(r.name)}</b> ${esc(r.release)} is missing ${esc(r.missingAssets.join(', '))}`, url: `${r.url}/releases`, tip: 'The release before it had these files', task: { kind: 'assets', repo: key(r) }, sig: r.release ?? '' })
   }
@@ -154,6 +165,12 @@ function needs(repos) {
     if (!drift) continue
     const text = drift.map(([where, v]) => `${esc(where)} ${esc(v)}`).join(' · ')
     out.push({ id: `sync:${key(r)}`, icon: '🧩', text: `<b>${esc(r.name)}</b> versions differ: ${text}`, url: r.url, tip: 'plugin.json, the marketplace copy and the release should name the same version', task: { kind: 'sync', repo: key(r) }, sig: text })
+  }
+  for (const r of mine) {
+    const drift = extras(r).readmeDrift ?? []
+    if (!drift.length) continue
+    const text = drift.map(d => `${d.repo === r.name ? '' : `${esc(d.repo)} `}${esc(d.says)} → ${esc(d.latest)}`).join(', ')
+    out.push({ id: `readme:${key(r)}`, icon: '📝', text: `<b>${esc(r.name)}</b> README is behind: ${text}`, url: `${r.url}#readme`, tip: 'The README names an older version than the latest release', task: { kind: 'readme', repo: key(r) }, sig: text })
   }
   const issueItems = []
   for (const r of mine.filter(r => r.issues)) {
@@ -175,6 +192,14 @@ function needs(repos) {
     }
     const rest = r.prs - Math.min(list.length, ISSUES_EACH)
     if (rest > 0) out.push({ id: `prs:${key(r)}`, icon: '🔀', text: `<b>${esc(r.name)}</b> +${plural(rest, 'more open PR')}`, url: `${r.url}/pulls` })
+  }
+  // Findability, as one item: public plugins and apps missing what helps people find and trust them.
+  const findable = mine.filter(r => !r.isPrivate && r.kind !== 'other' && r.missing?.length)
+  if (findable.length) {
+    const count = what => findable.filter(r => r.missing.includes(what)).length
+    const parts = ['description', 'topics', 'license', 'README'].filter(count).map(w => `no ${w} (${count(w)})`)
+    const sig = findable.map(r => `${key(r)}:${r.missing.join('+')}`).join(' ')
+    out.push({ id: 'hygiene', icon: '🔍', text: `<b>Help people find ${plural(findable.length, 'repo')}</b>: ${parts.join(' · ')}`, url: 'https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/classifying-your-repository-with-topics', tip: findable.map(r => `${r.name}: ${r.missing.join(', ')}`).join('\n'), task: { kind: 'hygiene', repo: key(findable[0]) }, sig })
   }
   // Finished-but-unreleased work is worth doing, but after anything someone is waiting on.
   for (const r of mine.filter(r => extras(r).unreleased > 0)) {
@@ -265,8 +290,8 @@ function headline(r) {
   const hide = hidden()
   const parts = []
   if (r.kind === 'plugin') {
-    const n = sum(entry(r)?.clones)
-    if (n) parts.push(`<span title="Lifetime clones. A plugin install clones its repo.">📥 ${compact(n)}</span>`)
+    const n = sum(cl(entry(r)))
+    if (n) parts.push(`<span title="${CLONES_TIP}">📥 ${compact(n)}</span>`)
   } else if (r.kind === 'app' && r.downloads) {
     parts.push(`<span title="${DOWNLOADS_TIP}">⬇ ${compact(r.downloads)}</span>`)
   }
@@ -296,7 +321,7 @@ function repoRow(r) {
     const keys = dayKeys(30)
     const since = e ? [...Object.keys(e.clones), ...Object.keys(e.views)].sort()[0] : null
     const facts = [
-      `📥 ${compact(sum(e?.clones))} clones`,
+      `📥 ${compact(sum(cl(e)))} clones`,
       `👁 ${compact(sum(e?.views))} views`,
       r.downloads ? `⬇ ${compact(r.downloads)} downloads` : '',
       `🍴 ${r.forks} forks`,
@@ -304,7 +329,7 @@ function repoRow(r) {
     ].filter(Boolean)
     detail = `<div class="detail">
       <div class="facts">${facts.map(f => `<span>${f}</span>`).join('')}</div>
-      ${r.canPush ? `<svg viewBox="0 0 300 32" preserveAspectRatio="none">${chart(keys.map(k => e?.clones?.[k] ?? 0), keys, 300, 32)}</svg>` : '<div class="dim">No traffic: you can\'t push to this repo.</div>'}
+      ${r.canPush ? `<svg viewBox="0 0 300 32" preserveAspectRatio="none">${chart(keys.map(k => cl(e)[k] ?? 0), keys, 300, 32)}</svg>` : '<div class="dim">No traffic: you can\'t push to this repo.</div>'}
       ${visitors(r)}
       <div class="btns">
         <button data-open="${esc(r.url)}">Open on GitHub ↗</button>
@@ -433,7 +458,7 @@ function renderList(repos) {
   const list = repos.filter(r => (r.kind ?? 'other') === tab)
   if (tab === 'other') list.sort((a, b) => pushed(b) - pushed(a))
   else {
-    const size = r => (r.kind === 'app' ? r.downloads : sum(entry(r)?.clones)) ?? 0
+    const size = r => (r.kind === 'app' ? r.downloads : sum(cl(entry(r)))) ?? 0
     list.sort((a, b) => week(b).now - week(a).now || size(b) - size(a) || pushed(b) - pushed(a))
   }
   $('list').innerHTML = errors.join('') + (list.map(repoRow).join('') || '<div class="dim pad">Nothing here yet.</div>')

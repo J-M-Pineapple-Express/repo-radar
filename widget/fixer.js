@@ -44,6 +44,23 @@ function promptFor(task, repo) {
       ].filter(Boolean)
       return `The versions of the ${key} plugin don't match: ${where.join(', ')}. Work out which one is right (check the changelog and the commits), then bring the others in line. That may mean updating the marketplace repo too. Ask me before you push to either repo or publish a release.`
     }
+    case 'validate': {
+      const errors = repo.extras?.validation?.errors ?? []
+      if (!errors.length) return null
+      const list = errors.slice(0, 8).map(e => `${clean(e.where)}: ${clean(e.message)}`).join('. ')
+      return `claude plugin validate fails on ${key} as it is on GitHub: ${list}. Run claude plugin validate . --json yourself to see the full report, fix every error, and run it again until it passes. If a fix means renaming the plugin, tell me first, since people who installed it will need to reinstall.`
+    }
+    case 'readme': {
+      const drift = repo.extras?.readmeDrift ?? []
+      if (!drift.length) return null
+      const list = drift.map(d => `it says ${clean(d.says)} for ${clean(d.repo)}, whose latest release is ${clean(d.latest)}`).join(', ')
+      return `The README of ${key} is behind its releases: ${list}. Update those version numbers, and check the rest of that section (features, install commands) still matches the latest release.`
+    }
+    case 'hygiene': {
+      const list = (repo.findable ?? []).map(r => `${clean(r.key)} (no ${r.missing.map(clean).join(', no ')})`)
+      if (!list.length) return null
+      return `These public repos are harder to find than they should be: ${list.join('; ')}. For each one, read its README and propose what's missing: a one-line description, 3 to 6 GitHub topics people would actually search for (include claude-code and claude-code-plugin where it fits), and a license (MIT unless the repo says otherwise). Show me the whole list first. Once I approve, apply descriptions and topics with gh repo edit and add LICENSE files in a commit.`
+    }
     case 'issue': {
       const i = (repo.issueList ?? []).find(x => x.number === task.number)
       if (!i) return null
@@ -127,8 +144,10 @@ function launch(task, repo, remembered) {
   const key = `${repo.owner}/${repo.name}`
   let prompt = promptFor(task, repo)
   if (!prompt) return { ok: false, why: 'That item is gone; sweep again.' }
-  let dir = findLocal(key, remembered)
-  if (dir) remembered[key] = dir
+  // A task across many repos works from the work folder; gh reaches each repo from there.
+  let dir = task.kind === 'hygiene' ? WORK : findLocal(key, remembered)
+  if (task.kind === 'hygiene') fs.mkdirSync(WORK, { recursive: true })
+  else if (dir) remembered[key] = dir
   else {
     fs.mkdirSync(WORK, { recursive: true })
     dir = WORK

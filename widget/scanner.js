@@ -4,6 +4,7 @@ const os = require('os')
 const path = require('path')
 const { execFile } = require('child_process')
 const { mergeHistory, dayKeys, repoKey, toLedger, changes, describe, summarize, record, missingAssets } = require('./lib')
+const checks = require('./checks')
 
 const DIR = path.join(os.homedir(), '.claude', 'repo-radar')
 const DATA = path.join(DIR, 'data.json')
@@ -25,6 +26,8 @@ const QUERY = `query($after: String) {
       pageInfo { hasNextPage endCursor }
       nodes {
         name url isPrivate isFork isArchived pushedAt viewerPermission
+        description licenseInfo { spdxId } repositoryTopics(first: 1) { totalCount }
+        readme: object(expression: "HEAD:README.md") { id }
         owner { login }
         stargazerCount forkCount
         issues(states: OPEN, first: 5, orderBy: { field: CREATED_AT, direction: DESC }) {
@@ -34,7 +37,7 @@ const QUERY = `query($after: String) {
         pullRequests(states: OPEN, first: 5, orderBy: { field: CREATED_AT, direction: DESC }) { totalCount nodes { number title url isDraft } }
         latestRelease { tagName publishedAt }
         primaryLanguage { name color }
-        defaultBranchRef { name target { ... on Commit { statusCheckRollup { state } } } }
+        defaultBranchRef { name target { oid ... on Commit { statusCheckRollup { state } } } }
         plugin: object(expression: "HEAD:.claude-plugin/plugin.json") { ... on Blob { text } }
         market: object(expression: "HEAD:.claude-plugin/marketplace.json") { ... on Blob { text } }
         releases(first: 10, orderBy: { field: CREATED_AT, direction: DESC }) {
@@ -172,6 +175,16 @@ function toRepo(node, now) {
       return { number: i.number, title: i.title, url: i.url, createdAt: i.createdAt, author: i.author?.login ?? null, lastBy: last?.author?.login ?? i.author?.login ?? null, lastAt: last?.createdAt ?? i.createdAt }
     }),
     defaultBranch: node.defaultBranchRef?.name ?? null,
+    headOid: node.defaultBranchRef?.target?.oid ?? null,
+    // Its own plugin.json or marketplace.json. Skill repos a marketplace lists have neither: the marketplace's copy is what installs.
+    hasManifest: Boolean(node.plugin || node.market),
+    // What makes a public repo findable: the 🔍 hygiene check reads these.
+    missing: [
+      !node.description && 'description',
+      !node.repositoryTopics?.totalCount && 'topics',
+      !node.licenseInfo && 'license',
+      !node.readme && 'README',
+    ].filter(Boolean),
     releaseAt: node.latestRelease?.publishedAt ?? null,
     pluginVersion: versionOf(node.plugin?.text),
     prList: node.pullRequests.nodes.map(p => ({ number: p.number, title: p.title, url: p.url, isDraft: p.isDraft })),
@@ -363,13 +376,75 @@ async function addTraffic(who, acct, history) {
       const [c, v] = await Promise.all([fetch(`${base}/clones`, { headers: headers(who.token) }), fetch(`${base}/views`, { headers: headers(who.token) })])
       if (!c.ok || !v.ok) return
       const entry = (history[repoKey(r.owner, r.name)] ??= { clones: {}, views: {} })
-      record(entry.clones, (await c.json()).clones ?? [])
+      const rows = (await c.json()).clones ?? []
+      record(entry.clones, rows)
+      // Unique cloners a day: ten clones by one person count once. outsideClones() starts from these.
+      record((entry.uniques ??= {}), rows.map(row => ({ timestamp: row.timestamp, count: row.uniques })))
       record(entry.views, (await v.json()).views ?? [])
     } catch {
       // traffic is a bonus; a failure leaves the row without it
     }
   })
 }
+
+/**
+ * CI checkouts a day, from GitHub Actions: every job that ran actions/checkout cloned the repo once,
+ * from a fresh machine, so it counts as one unique cloner. Kept in data.ciCheckouts[owner/name][day].
+ * A finished run never changes, so each is read once (data.ciSeen); only new runs cost a request.
+ */
+async function addCiCheckouts(who, acct, data) {
+  const since = dayKeys(Date.now())[0]
+  data.ciCheckouts ??= {}
+  data.ciSeen ??= {}
+  const picks = acct.repos.filter(r => r.canPush && r.health !== 'archived')
+  await inBatches(picks, async r => {
+    const key = repoKey(r.owner, r.name)
+    try {
+      const base = `${restBase(who.host)}/repos/${r.owner}/${r.name}/actions/runs`
+      const list = await getJson(who, `${base}?created=>=${since}&per_page=100`)
+      const runs = (list?.workflow_runs ?? []).filter(run => run.status === 'completed')
+      if (!runs.length) return
+      const seen = (data.ciSeen[key] ??= {})
+      for (const run of runs) {
+        if (seen[run.id]) continue
+        const jobs = await getJson(who, `${base}/${run.id}/jobs?per_page=100`)
+        if (!jobs) continue
+        const n = (jobs.jobs ?? []).filter(j => (j.steps ?? []).some(s => /actions\/checkout/i.test(s.name))).length
+        seen[run.id] = { day: run.created_at.slice(0, 10), n }
+      }
+      // Rebuild the day counts from what's been seen, and forget runs past GitHub's 14-day traffic window.
+      const days = {}
+      for (const [id, s] of Object.entries(seen)) {
+        if (s.day < since) delete seen[id]
+        else days[s.day] = (days[s.day] ?? 0) + s.n
+      }
+      data.ciCheckouts[key] = days
+    } catch {
+      // without it, CI clones just aren't subtracted
+    }
+  })
+}
+
+/**
+ * Clones from outside: each day's unique cloners, minus CI checkouts, minus 1 for your own machine on
+ * days it touched the repo (Repo Radar's checks, a Fix, an install; all from the one address).
+ * Bots that clone new repos can't be told apart, so this is "about". Days from before uniques were
+ * kept (imported history) stay as plain clone counts.
+ */
+function outsideClones(data) {
+  for (const [key, entry] of Object.entries(data.history ?? {})) {
+    if (!entry.uniques) continue
+    const ci = data.ciCheckouts?.[key] ?? {}
+    const self = data.extras?.[key]?.selfDays ?? {}
+    entry.outside = {}
+    for (const [day, n] of Object.entries(entry.uniques)) {
+      entry.outside[day] = Math.max(0, n - (ci[day] ?? 0) - (self[day] ? 1 : 0))
+    }
+  }
+}
+
+/** A repo's clones a day as shown everywhere: outside cloners where known, plain counts before that. */
+const shownClones = entry => ({ ...(entry?.clones ?? {}), ...(entry?.outside ?? {}) })
 
 const getJson = async (who, url) => {
   const res = await fetch(url, { headers: headers(who.token) })
@@ -411,7 +486,31 @@ async function addReleaseExtras(who, r, x) {
  * commits since the latest release, open Dependabot alerts, and where visitors came from.
  * Each is a bonus: a repo without access (or with Dependabot off) just goes without.
  */
-async function addExtras(who, acct, data) {
+/** Every repo's latest release by lowercase owner/name, for README drift. */
+const releaseMap = accounts =>
+  new Map(accounts.flatMap(a => a.repos).filter(r => r.release).map(r => [repoKey(r.owner, r.name).toLowerCase(), { tag: r.release, name: r.name }]))
+
+/** README lines naming an older version than the latest release (the 📝 item). */
+async function addReadmeDrift(who, r, x, releases) {
+  if (!r.missing || r.missing.includes('README')) return
+  if (r.kind === 'other' && !r.release) return
+  try {
+    const res = await fetch(`${restBase(who.host)}/repos/${r.owner}/${r.name}/readme`, { headers: { ...headers(who.token), Accept: 'application/vnd.github.raw' } })
+    if (res.ok) x.readmeDrift = checks.readmeDrift(await res.text(), r, releases)
+  } catch {}
+}
+
+/** ✘ validation: Claude Code's validator on GitHub's copy, re-run only when the default branch moved. */
+async function addValidation(who, acct, data) {
+  const picks = acct.repos.filter(r => r.kind === 'plugin' && r.hasManifest && r.canPush && r.health !== 'archived')
+  data.extras ??= {}
+  // Spawns a git and a claude per repo, so a few at a time.
+  for (let i = 0; i < picks.length; i += 3) {
+    await Promise.all(picks.slice(i, i + 3).map(r => checks.validate(r, who.token, (data.extras[repoKey(r.owner, r.name)] ??= {})).catch(() => {})))
+  }
+}
+
+async function addExtras(who, acct, data, releases) {
   const base = r => `${restBase(who.host)}/repos/${r.owner}/${r.name}`
   const today = new Date().toISOString().slice(0, 10)
   data.extras ??= {}
@@ -421,6 +520,7 @@ async function addExtras(who, acct, data) {
     const key = repoKey(r.owner, r.name)
     const x = (data.extras[key] ??= {})
     await addReleaseExtras(who, r, x)
+    await addReadmeDrift(who, r, x, releases)
     try {
       const alerts = await getJson(who, `${base(r)}/dependabot/alerts?state=open&per_page=20`)
       if (Array.isArray(alerts)) {
@@ -457,7 +557,7 @@ function milestones(data, news) {
   data.milestones ??= {}
   for (const r of data.accounts.flatMap(a => a.repos)) {
     const key = repoKey(r.owner, r.name)
-    const clones = Object.values(data.history[key]?.clones ?? {}).reduce((n, c) => n + c, 0)
+    const clones = Object.values(shownClones(data.history[key])).reduce((n, c) => n + c, 0)
     const now = { stars: r.stars, clones, downloads: r.downloads ?? 0 }
     const was = data.milestones[key]
     for (const [metric, n] of Object.entries(now)) {
@@ -519,7 +619,8 @@ async function scan({ force = false } = {}) {
       if (trafficDue) {
         await addTraffic(w, acct, data.history)
         await addDownloads(w, acct)
-        await addExtras(w, acct, data)
+        await addExtras(w, acct, data, releaseMap(accounts))
+        await addCiCheckouts(w, acct, data)
       } else {
         // Between hourly passes, keep the full download counts from the last one.
         const was = new Map((data.accounts ?? []).flatMap(a => a.repos).map(r => [repoKey(r.owner, r.name), r.downloads ?? 0]))
@@ -530,12 +631,19 @@ async function scan({ force = false } = {}) {
           const x = data.extras?.[repoKey(r.owner, r.name)]
           return x && (x.release !== r.release || versionsDisagree(r, x))
         })
-        await inBatches(fresh, r => addReleaseExtras(w, r, data.extras[repoKey(r.owner, r.name)]))
+        await inBatches(fresh, async r => {
+          const x = data.extras[repoKey(r.owner, r.name)]
+          await addReleaseExtras(w, r, x)
+          await addReadmeDrift(w, r, x, releaseMap(accounts))
+        })
       }
+      // Every sweep, but it only does work for a repo whose default branch moved.
+      await addValidation(w, acct, data)
     } catch {
       // the repo list still stands without its extras
     }
   }
+  outsideClones(data)
   const snap = { accounts, fetchedAt: now }
   let news = []
 
@@ -571,7 +679,7 @@ async function scan({ force = false } = {}) {
       isNewDigest = true
       const since = new Date(data.ledger.at).toISOString().slice(0, 10)
       const clones = Object.values(data.history).reduce(
-        (n, e) => n + Object.entries(e.clones).reduce((m, [d, c]) => (d >= since ? m + c : m), 0),
+        (n, e) => n + Object.entries(shownClones(e)).reduce((m, [d, c]) => (d >= since ? m + c : m), 0),
         0,
       )
       data.digest = { at: now, since: data.ledger.at, line: summarize(list, clones), items: news.slice(0, 6) }
@@ -593,6 +701,10 @@ async function scan({ force = false } = {}) {
     if (!isNewDigest) data.digest = disk.digest
     // What you've seen in Following is marked while we sweep; keep the newer marks.
     data.followSeen = { ...data.followSeen, ...disk.followSeen }
+    // A Fix marks "this machine touched it" while we sweep; keep those marks.
+    for (const [key, x] of Object.entries(disk.extras ?? {})) {
+      if (x.selfDays) ((data.extras ??= {})[key] ??= {}).selfDays = { ...x.selfDays, ...data.extras[key]?.selfDays }
+    }
   } catch {}
   save(data)
   return { data, news, error: null }
@@ -638,4 +750,13 @@ async function closeIssue(key, number) {
   return { ok: true }
 }
 
-module.exports = { DATA, load, save, scan, closeIssue }
+/** Notes that this machine touched a repo today, so its clone isn't counted as an outside one. */
+function markSelf(data, key) {
+  const x = ((data.extras ??= {})[key] ??= {})
+  const today = new Date().toISOString().slice(0, 10)
+  const since = dayKeys(Date.now())[0]
+  x.selfDays = Object.fromEntries(Object.entries(x.selfDays ?? {}).filter(([d]) => d >= since))
+  x.selfDays[today] = true
+}
+
+module.exports = { DATA, load, save, scan, closeIssue, markSelf, shownClones }
