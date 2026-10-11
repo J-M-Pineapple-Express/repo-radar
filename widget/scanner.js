@@ -705,6 +705,7 @@ async function scan({ force = false } = {}) {
     mergeHistory(data.history, disk.history)
     data.prefs = { ...data.prefs, ...disk.prefs }
     if (!isNewDigest) data.digest = disk.digest
+    data.needs = disk.needs // the page shares its list while we sweep
     // What you've seen in Following is marked while we sweep; keep the newer marks.
     data.followSeen = { ...data.followSeen, ...disk.followSeen }
     // A Fix marks "this machine touched it" while we sweep; keep those marks.

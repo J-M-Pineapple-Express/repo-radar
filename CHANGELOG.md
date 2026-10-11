@@ -2,6 +2,16 @@
 
 All notable changes to Repo Radar. Versions follow [semver](https://semver.org).
 
+## [0.1.9] - 2026-10-10
+
+### Added
+- Installing the mod gets you the widget. On your first session the mod downloads the widget's installer from the latest release and opens it. After that, the widget opens with each session. Turn that off with **Open the widget with each session** in `/config`. `/repos widget` installs the widget if it's missing.
+- The `/repos` pane shows ⚠️ Needs Attention: the widget's own list, shared through `data.json`, with a button to fix them in the widget.
+
+### Changed
+- The `/repos` pane counts outside clones, like the widget.
+- A widget that's already open stays where it is when a new session starts.
+
 ## [0.1.8] - 2026-10-10
 
 ### Fixed
@@ -72,6 +82,7 @@ First release.
 - **Widget:** an always-on-top desktop dashboard for Windows and Mac: a "Needs you" strip, star/clone/download/CI tiles, a 30-day clones chart, and Plugins / Apps / Other tabs.
 - **Mod:** a Claude Code plugin with a `/repos` pane, toasts for new stars, forks, issues and releases, lifetime clone history, and `/repos widget` to open the widget.
 
+[0.1.9]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.5...v0.1.6

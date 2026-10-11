@@ -1,11 +1,17 @@
 {
   "name": "repo-radar",
-  "version": "0.1.8",
-  "description": "A live GitHub dashboard for every repo across every account you're signed into.",
+  "version": "0.1.9",
+  "description": "A live GitHub dashboard for every repo across every account you're signed into. It installs an always-on-top desktop widget for you on first run.",
   "author": { "name": "AfterRealm" },
   "homepage": "https://github.com/J-M-Pineapple-Express/repo-radar",
   "types": "./types/index.d.ts",
   "userConfig": {
+    "open_widget": {
+      "type": "boolean",
+      "title": "Open the widget with each session",
+      "description": "Opens the Repo Radar desktop widget when a session starts, and offers to install it the first time.",
+      "default": true
+    },
     "github_token": {
       "type": "string",
       "title": "GitHub token (optional)",

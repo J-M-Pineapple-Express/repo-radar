@@ -33,6 +33,10 @@ export type Account = { host: string; login: string; repos: Repo[]; error?: stri
 /** `watchedSince`: the first day Repo Radar's own traffic history covers (views have no older source). */
 export type Snapshot = { accounts: Account[]; fetchedAt: number; trafficAt: number; watchedSince: string }
 
+/** One Needs Attention item, as the widget shares it in data.json. */
+export type NeedItem = { icon: string; text: string; url: string }
+export type Needs = { at: number; items: NeedItem[] }
+
 export type Status = 'idle' | 'loading' | 'ready' | 'no-auth' | 'error'
 
 declare module 'claude-code' {
@@ -44,6 +48,7 @@ declare module 'claude-code' {
       expanded: string[]
       digest: string
       hidden: string[]
+      needs: Needs | null
     }
   }
 }

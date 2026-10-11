@@ -247,6 +247,15 @@ ipcMain.on('radar:followSeen', () => {
   for (const f of data.following ?? []) data.followSeen[f.key] = f.release?.tag ?? null
   scanner.save(data)
 })
+// The Needs Attention list as plain text, for the mod's /repos pane: one list, worked out in one place.
+ipcMain.on('radar:needs', (_e, list) => {
+  if (!Array.isArray(list)) return
+  const items = list.slice(0, 50).map(i => ({ icon: String(i?.icon ?? ''), text: String(i?.text ?? '').slice(0, 300), url: String(i?.url ?? '') }))
+  const data = scanner.load()
+  if (JSON.stringify(data.needs?.items) === JSON.stringify(items)) return
+  data.needs = { at: Date.now(), items }
+  scanner.save(data)
+})
 ipcMain.on('radar:prefs', (_e, prefs) => {
   const data = scanner.load()
   data.prefs = { ...data.prefs, ...prefs }
@@ -265,8 +274,9 @@ ipcMain.on('widget:close', () => app.quit())
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
-    if (!win) return
+  // The mod opens the widget with --quiet when a session starts: already running, it stays where it is.
+  app.on('second-instance', (_e, argv) => {
+    if (!win || argv.includes('--quiet')) return
     if (win.isMinimized()) win.restore()
     win.show()
     win.focus()

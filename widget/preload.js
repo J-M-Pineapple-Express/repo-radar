@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('radar', {
   open: url => ipcRenderer.send('radar:open', url),
   dismissDigest: () => ipcRenderer.send('radar:dismissDigest'),
   setPrefs: prefs => ipcRenderer.send('radar:prefs', prefs),
+  shareNeeds: list => ipcRenderer.send('radar:needs', list),
   markFollowSeen: () => ipcRenderer.send('radar:followSeen'),
   fix: task => ipcRenderer.invoke('radar:fix', task),
   installPlan: req => ipcRenderer.invoke('radar:installPlan', req),

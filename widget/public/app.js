@@ -249,11 +249,27 @@ function closeButton(i) {
   return `<button class="fix${state === 'confirm' ? ' armed' : ''}${bad ? ' bad' : ''}" data-close="${esc(i.id)}" title="${esc(tip)}">${label}</button>`
 }
 
+// The mod's /repos pane shows this same list, as plain text. Sent only when it changes.
+let sharedNeeds = ''
+function shareNeeds(items) {
+  const plain = html => {
+    const el = document.createElement('div')
+    el.innerHTML = html
+    return el.textContent.replace(/\s+/g, ' ').trim()
+  }
+  const list = items.map(i => ({ icon: i.icon, text: plain(i.text), url: i.url }))
+  const json = JSON.stringify(list)
+  if (json === sharedNeeds) return
+  sharedNeeds = json
+  window.radar.shareNeeds(list)
+}
+
 function renderNeeds(repos) {
   const d = data.digest
   const all = needs(repos)
   const items = all.filter(i => !isDone(i))
   const doneCount = all.length - items.length
+  shareNeeds(items)
   const show = !hidden().has('needs') && (d || items.length || doneCount)
   $('needs').classList.toggle('hidden', !show)
   if (!show) return

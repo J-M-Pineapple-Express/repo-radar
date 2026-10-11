@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 
-import type { Account, Health, Ledger, Repo, Snapshot, Status, Traffic } from '../types'
+import type { Account, Health, Ledger, Needs, Repo, Snapshot, Status, Traffic } from '../types'
 import { ago, changes, compact, dayKeys, describe, importTracker, lifetime, mergeHistory, shortDate, missingAssets, perDay, record, repoKey, summarize, toLedger } from './lib'
 import type { DayRow, History } from './lib'
 
@@ -23,6 +23,8 @@ const message = atom({ plugin: 'repo-radar', key: 'message' } as const, '')
 const expanded = atom({ plugin: 'repo-radar', key: 'expanded' } as const, [])
 const digest = atom({ plugin: 'repo-radar', key: 'digest' } as const, '')
 const hiddenColumns = atom({ plugin: 'repo-radar', key: 'hidden' } as const, [])
+const needs = atom({ plugin: 'repo-radar', key: 'needs' } as const, null)
+const NEEDS_PREVIEW = 5
 
 const DOT: Record<Health, { glyph: string; color: string }> = {
   green: { glyph: '●', color: 'green' },
@@ -74,7 +76,13 @@ async function sharedPath($: Engine): Promise<string | null> {
   return home ? `${home}/.claude/repo-radar/data.json` : null
 }
 
-type Shared = { history?: History; ledger?: Ledger | null; watchedSince?: string | null; prefs?: Record<string, unknown> } & Record<string, unknown>
+type Shared = { history?: History; ledger?: Ledger | null; watchedSince?: string | null; prefs?: Record<string, unknown>; needs?: Needs | null } & Record<string, unknown>
+
+/** The widget's outside clones per repo and day: uniques less CI builds and this machine. */
+const outsideDays = (shared: Shared | null): Record<string, Record<string, number>> =>
+  Object.fromEntries(
+    Object.entries(shared?.history ?? {}).map(([key, e]) => [key, ((e as { outside?: Record<string, number> }).outside ?? {})]),
+  )
 
 async function loadShared($: Engine): Promise<Shared | null> {
   const file = await sharedPath($)
@@ -110,18 +118,21 @@ async function saveShared($: Engine, patch: { history?: History; ledger?: Ledger
   }
 }
 
-const WIDGET_RELEASES = 'https://github.com/J-M-Pineapple-Express/repo-radar/releases/latest'
-const NO_WIDGET = `Couldn't find the Repo Radar widget. Install it from ${WIDGET_RELEASES}, then try /repos widget again.`
+const WIDGET_REPO = 'J-M-Pineapple-Express/repo-radar'
+const WIDGET_RELEASES = `https://github.com/${WIDGET_REPO}/releases/latest`
+const NO_WIDGET = 'missing'
 
 /**
  * Starts the widget without waiting on it. The installed app first; while building,
  * the widget folder beside this mod. `start` (Windows) and `open` (Mac) detach it,
- * so a mod reload never closes it.
+ * so a mod reload never closes it. `quiet` leaves a widget that's already open where it is.
+ * Returns NO_WIDGET when there's nothing to start.
  */
-async function launchWidget($: Engine): Promise<string> {
+async function startWidget($: Engine, quiet = false): Promise<string> {
   const root = $.plugin.root.replaceAll('\\', '/').replace(/\/$/, '').replace(/\/\.claude-plugin$/, '')
   const dev = `${root.slice(0, root.lastIndexOf('/'))}/widget`
   const ok = '📡 Repo Radar widget launched.'
+  const flags = quiet ? ['--quiet'] : []
   const failed = (r: { exitCode: number; stderr: string }) => `Couldn't launch the widget: ${r.stderr.trim() || `exit ${r.exitCode}`}`
   const local = (await $.env.get('LOCALAPPDATA')) ?? ''
   if (local) {
@@ -129,18 +140,76 @@ async function launchWidget($: Engine): Promise<string> {
     const devElectron = `${dev}/node_modules/electron/dist/electron.exe`
     const argv = (await $.fs.exists(installed)) ? [installed] : (await $.fs.exists(devElectron)) ? [devElectron, dev] : null
     if (!argv) return NO_WIDGET
-    const r = await $.process.run(['cmd', '/c', 'start', 'Repo Radar', ...argv.map(winPath)])
+    const r = await $.process.run(['cmd', '/c', 'start', 'Repo Radar', ...argv.map(winPath), ...flags])
     return r.exitCode === 0 ? ok : failed(r)
   }
   // Mac: `open -a` finds the app wherever it was dragged (Applications, ~/Applications).
-  const app = await $.process.run(['open', '-a', 'Repo Radar']).catch(() => null)
+  // `-g` keeps a running app in the background (open hands no arguments to a running app).
+  const app = await $.process.run(['open', ...(quiet ? ['-g'] : []), '-a', 'Repo Radar']).catch(() => null)
   if (app?.exitCode === 0) return ok
   const devApp = `${dev}/node_modules/electron/dist/Electron.app`
   if (await $.fs.exists(devApp)) {
-    const r = await $.process.run(['open', '-a', devApp, '--args', dev])
+    const r = await $.process.run(['open', '-a', devApp, '--args', dev, ...flags])
     return r.exitCode === 0 ? ok : failed(r)
   }
   return NO_WIDGET
+}
+
+/**
+ * Downloads the widget from this repo's latest release and opens its installer:
+ * the Setup .exe on Windows, the .dmg for this Mac's chip. The installer asks before it installs.
+ */
+async function installWidget($: Engine): Promise<string> {
+  const manual = `Get it from ${WIDGET_RELEASES}`
+  try {
+    const res = await $.http.fetch(`https://api.github.com/repos/${WIDGET_REPO}/releases/latest`, {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'repo-radar' },
+    })
+    if (!res.ok) return `Couldn't reach the widget's releases (HTTP ${res.status}). ${manual}`
+    const assets = (JSON.parse(res.text).assets ?? []) as { name: string; browser_download_url: string }[]
+    const isWindows = Boolean(await $.env.get('LOCALAPPDATA'))
+    let pattern: RegExp
+    if (isWindows) {
+      pattern = /^RepoRadar-Setup-[\d.]+\.exe$/
+    } else {
+      const arch = (await $.process.run(['uname', '-m'])).stdout.trim() === 'arm64' ? 'arm64' : 'x64'
+      const os = (await $.process.run(['uname', '-s'])).stdout.trim()
+      if (os !== 'Darwin') return `The widget is built for Windows and Mac. ${manual}`
+      pattern = new RegExp(`^RepoRadar-[\\d.]+-${arch}\\.dmg$`)
+    }
+    const asset = assets.find(a => pattern.test(a.name))
+    if (!asset) return `The latest release has no installer for this computer. ${manual}`
+    const tmp = ((await $.env.get('TEMP')) || (await $.env.get('TMPDIR')) || '/tmp').replace(/[\\/]$/, '')
+    const file = isWindows ? winPath(`${tmp}/${asset.name}`) : `${tmp}/${asset.name}`
+    $.ui.toast(`📡 Downloading the Repo Radar widget (${asset.name})…`, { timeoutMs: 8000 })
+    const get = await $.process.run([isWindows ? 'curl.exe' : 'curl', '-fsSL', '-o', file, asset.browser_download_url], { timeoutMs: 10 * 60 * 1000 })
+    if (get.exitCode !== 0) return `The download failed: ${get.stderr.trim() || `exit ${get.exitCode}`}. ${manual}`
+    const run = await $.process.run(isWindows ? ['cmd', '/c', 'start', '', file] : ['open', file])
+    if (run.exitCode !== 0) return `Downloaded ${file} but couldn't open it. Open it yourself to install.`
+    return isWindows
+      ? '📡 The Repo Radar installer is open. Finish it and the widget starts.'
+      : '📡 The Repo Radar disk image is open: drag Repo Radar to Applications. The first time, right-click it and choose Open (the app isn’t signed).'
+  } catch (err) {
+    return `Couldn't get the widget: ${err instanceof Error ? err.message : err}. ${manual}`
+  }
+}
+
+/** /repos widget: start it, or install it first. */
+async function launchWidget($: Engine): Promise<string> {
+  const r = await startWidget($)
+  return r === NO_WIDGET ? installWidget($) : r
+}
+
+/**
+ * Session start: open the widget beside the session. The first time it isn't installed,
+ * offer it once with the installer; after that, /repos widget installs it.
+ */
+async function widgetAtStart($: Engine): Promise<void> {
+  const r = await startWidget($, true)
+  if (r !== NO_WIDGET) return
+  if (await $.store.get('widgetOffered')) return
+  await $.store.set('widgetOffered', true)
+  $.ui.toast(await installWidget($), { timeoutMs: 12000 })
 }
 
 async function ghLogins($: Engine): Promise<{ host: string; login: string }[]> {
@@ -280,14 +349,19 @@ async function addTraffic($: Engine, who: Login, acct: Account, history: History
   }
 }
 
-/** Gives every repo with history its lifetime totals and recent clone days. */
-function withLifetime(snap: Snapshot, history: History): Snapshot {
+/**
+ * Gives every repo with history its lifetime totals and recent clone days. Where the widget
+ * worked out outside clones for a day, that count stands in for the raw one.
+ */
+function withLifetime(snap: Snapshot, history: History, outside: Record<string, Record<string, number>> = {}): Snapshot {
   const keys = dayKeys(snap.fetchedAt)
   const accounts = snap.accounts.map(a => ({
     ...a,
     repos: a.repos.map(r => {
-      const entry = history[repoKey(r.owner, r.name)]
-      if (!entry) return r
+      const key = repoKey(r.owner, r.name)
+      const raw = history[key]
+      if (!raw) return r
+      const entry = { ...raw, clones: { ...raw.clones, ...outside[key] } }
       const life = lifetime(entry)
       const recent = Object.entries(entry.clones).map(([timestamp, count]) => ({ timestamp, count }))
       const traffic: Traffic = { clones: perDay(recent, keys), clonesLifetime: life.clones, viewsLifetime: life.views, since: life.since }
@@ -328,8 +402,9 @@ async function importHistory($: Engine, fallbackToken: string, source: string): 
   }
   await $.store.set('history', history)
   await saveShared($, { history })
+  const shared = await loadShared($)
   const snap = await read($, snapshot)
-  if (snap) await update($, snapshot, () => withLifetime(snap, history))
+  if (snap) await update($, snapshot, () => withLifetime(snap, history, outsideDays(shared)))
   return `📥 Imported ${merged.days} days of clone history across ${merged.repos} repos. Lifetime totals updated.`
 }
 
@@ -440,7 +515,9 @@ async function refresh($: Engine, fallbackToken: string): Promise<void> {
       }
     }
     const fresh: Snapshot = { accounts, fetchedAt: now, trafficAt: isTrafficDue ? now : (before?.trafficAt ?? now), watchedSince }
-    const snap = isTrafficDue ? withLifetime(fresh, history) : fresh
+    // The widget's outside counts change between our traffic passes, so totals are worked out every time.
+    const snap = withLifetime(fresh, history, outsideDays(shared))
+    await update($, needs, () => shared?.needs ?? null)
     if (isTrafficDue) await $.store.set('history', history)
     // The widget may have swept more recently; its ledger then says what's already been announced.
     const sharedLedger = shared?.ledger
@@ -464,6 +541,7 @@ async function refresh($: Engine, fallbackToken: string): Promise<void> {
 
 export const register: Register = (on, options) => {
   const fallbackToken = String((options as Record<string, unknown>)?.github_token ?? '')
+  const opensWidget = (options as Record<string, unknown>)?.open_widget !== false
   let tick = 0
 
   on('session.start', async ($, e, next) => {
@@ -479,6 +557,7 @@ export const register: Register = (on, options) => {
     const savedHidden = await $.store.get('hiddenColumns')
     if (Array.isArray(savedHidden)) await update($, hiddenColumns, () => savedHidden.map(String))
     void refresh($, fallbackToken)
+    if (opensWidget) void widgetAtStart($)
     $.clock.every(REFRESH_MS, () => void refresh($, fallbackToken))
     $.clock.every(TICK_MS, async () => {
       const snap = await read($, snapshot)
@@ -494,6 +573,7 @@ export const register: Register = (on, options) => {
     const opened = await $.ui.open({ id: PANE, title: '📡 Repo Radar', focus: true, closeOnEscape: true, rows: 26, columns: 98 })
     const snap = await read($, snapshot)
     if (!snap || (await $.clock.now()) - snap.fetchedAt > REFRESH_MS) void refresh($, fallbackToken)
+    else void loadShared($).then(shared => update($, needs, () => shared?.needs ?? null))
     const where = e.presentation?.isFullscreen
       ? 'docked on the right'
       : 'above the prompt (turn on the fullscreen layout to dock it on the right)'
@@ -516,6 +596,7 @@ export const register: Register = (on, options) => {
     const open = await read($, expanded)
     const away = await read($, digest)
     const hidden = await read($, hiddenColumns)
+    const todo = await read($, needs)
     const now = await $.clock.now()
     const width = e.props.bodyColumns ?? e.viewport?.columns ?? 80
     const isWide = width >= 70
@@ -547,6 +628,25 @@ export const register: Register = (on, options) => {
             <Button key="dismiss-digest" plain dimColor label="dismiss" onPress={() => void update($, digest, () => '')} />
           </Box>
         )}
+        {/* The widget works the list out and shares it; its buttons hand each item to Claude. */}
+        {todo && todo.items.length > 0 && (
+          <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1} marginTop={1}>
+            <Text bold color="yellow">
+              ⚠️ Needs Attention {todo.items.length}
+              <Text dimColor> · as of {ago(new Date(todo.at).toISOString(), now)} ago</Text>
+            </Text>
+            {todo.items.slice(0, NEEDS_PREVIEW).map((item, i) => (
+              <Text key={`need:${i}`} wrap="truncate">
+                {item.icon} {item.text}
+              </Text>
+            ))}
+            <Box gap={2}>
+              {todo.items.length > NEEDS_PREVIEW && <Text dimColor>+{todo.items.length - NEEDS_PREVIEW} more</Text>}
+              <Button key="fix-in-widget" plain label="🔧 Fix these in the widget" onPress={() => void launchWidget($).then(t => $.ui.toast(t, { timeoutMs: 6000 }))} />
+            </Box>
+          </Box>
+        )}
+        {todo && todo.items.length === 0 && <Text color="green">✅ Needs Attention: all clear</Text>}
       </Box>
     )
 
@@ -715,7 +815,7 @@ export const register: Register = (on, options) => {
         })}
         {hasTraffic && since && snap.watchedSince && (
           <Text dimColor>
-            clones since {shortDate(since < snap.watchedSince ? since : snap.watchedSince, now)} · views since{' '}
+            outside clones (no CI, not you) since {shortDate(since < snap.watchedSince ? since : snap.watchedSince, now)} · views since{' '}
             {shortDate(snap.watchedSince, now)} (GitHub only keeps 14 days of views)
           </Text>
         )}
