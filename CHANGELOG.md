@@ -2,6 +2,11 @@
 
 All notable changes to Repo Radar. Versions follow [semver](https://semver.org).
 
+## [0.1.10] - 2026-10-11
+
+### Fixed
+- 🔧 Fix on Windows opens one Claude tab, even when the task has a `;` in it. Windows Terminal read each `;` as "open another tab", so the 🔍 findability task, and any issue title with a semicolon, opened a pile of broken tabs.
+
 ## [0.1.9] - 2026-10-10
 
 ### Added
@@ -82,6 +87,7 @@ First release.
 - **Widget:** an always-on-top desktop dashboard for Windows and Mac: a "Needs you" strip, star/clone/download/CI tiles, a 30-day clones chart, and Plugins / Apps / Other tabs.
 - **Mod:** a Claude Code plugin with a `/repos` pane, toasts for new stars, forks, issues and releases, lifetime clone history, and `/repos widget` to open the widget.
 
+[0.1.10]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/J-M-Pineapple-Express/repo-radar/compare/v0.1.6...v0.1.7

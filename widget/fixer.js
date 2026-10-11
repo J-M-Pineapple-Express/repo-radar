@@ -59,7 +59,7 @@ function promptFor(task, repo) {
     case 'hygiene': {
       const list = (repo.findable ?? []).map(r => `${clean(r.key)} (no ${r.missing.map(clean).join(', no ')})`)
       if (!list.length) return null
-      return `These public repos are harder to find than they should be: ${list.join('; ')}. For each one, read its README and propose what's missing: a one-line description, 3 to 6 GitHub topics people would actually search for (include claude-code and claude-code-plugin where it fits), and a license (MIT unless the repo says otherwise). Show me the whole list first. Once I approve, apply descriptions and topics with gh repo edit and add LICENSE files in a commit.`
+      return `These public repos are harder to find than they should be: ${list.join(' · ')}. For each one, read its README and propose what's missing: a one-line description, 3 to 6 GitHub topics people would actually search for (include claude-code and claude-code-plugin where it fits), and a license (MIT unless the repo says otherwise). Show me the whole list first. Once I approve, apply descriptions and topics with gh repo edit and add LICENSE files in a commit.`
     }
     case 'issue': {
       const i = (repo.issueList ?? []).find(x => x.number === task.number)
@@ -157,7 +157,8 @@ function launch(task, repo, remembered) {
   const exe = claudeExe()
   if (process.platform === 'win32') {
     const argv = hasWindowsTerminal()
-      ? ['wt', ['-d', dir, '--title', `Claude: ${repo.name}`, exe, prompt]]
+      ? // Windows Terminal reads a bare ; as "open another tab", even inside an argument.
+        ['wt', ['-d', dir, '--title', `Claude: ${repo.name}`, exe, prompt.replace(/;/g, ',')]]
       : ['cmd', ['/c', 'start', `Claude: ${repo.name}`, '/d', dir, exe, prompt]]
     spawn(argv[0], argv[1], { detached: true, stdio: 'ignore', windowsHide: false }).unref()
   } else if (process.platform === 'darwin') {
